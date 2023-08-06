@@ -8,6 +8,8 @@ DEBUG = True
 
 # Connect to the database
 
+USERNAME = os.getenv('USERNAME')
+PASSWORD = os.getenv('PASSWORD')
+DB_NAME = os.getenv('DB_NAME')
 
-# TODO IMPLEMENT DATABASE URL
-SQLALCHEMY_DATABASE_URI = '<Put your local database url>'
+SQLALCHEMY_DATABASE_URI = f'postgresql://{USERNAME}:{PASSWORD}@localhost:5432/{DB_NAME}'
