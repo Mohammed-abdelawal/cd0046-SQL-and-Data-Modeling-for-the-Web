@@ -2,14 +2,11 @@ import logging
 import sys
 from logging import Formatter, FileHandler
 
-import babel
-import dateutil.parser
-import dateutil.parser
 from flask import Flask, render_template, request, flash, redirect, url_for, abort
 from flask_migrate import Migrate
 from flask_moment import Moment
 from sqlalchemy import func
-
+from utils import format_datetime
 from forms import *
 from models import db, Venue, Artist, Show
 
@@ -24,20 +21,9 @@ app.config.from_object('config')
 db.init_app(app)
 migrate = Migrate(app, db)
 
-
 # ----------------------------------------------------------------------------#
 # Filters.
 # ----------------------------------------------------------------------------#
-
-def format_datetime(value, format='medium'):
-    date = dateutil.parser.parse(value)
-    if format == 'full':
-        format = "EEEE MMMM, d, y 'at' h:mma"
-    elif format == 'medium':
-        format = "EE MM, dd, y h:mma"
-    return babel.dates.format_datetime(date, format, locale='en')
-
-
 app.jinja_env.filters['datetime'] = format_datetime
 
 
@@ -101,14 +87,16 @@ def create_venue_form():
 @app.route('/venues/create', methods=['POST'])
 def create_venue_submission():
     form = VenueForm(request.form)
+    obj_id = 0
     if not form.validate():
         flash(form.errors, 'error')
         return render_template('forms/new_venue.html', form=form)
     try:
-        obj = Venue(**form.darta)
+        obj = Venue(**form.data)
         db.session.add(obj)
         db.session.commit()
         flash(f'Venue {obj.name}  was successfully listed!')
+        obj_id = obj.id
 
     except:
         db.session.rollback()
@@ -119,7 +107,7 @@ def create_venue_submission():
     finally:
         db.session.close()
 
-    return redirect(url_for('show_venue', venue_id=obj.id))
+    return redirect(url_for('show_venue', venue_id=obj_id))
 
 
 @app.route('/venues/<venue_id>', methods=['DELETE'])
@@ -158,10 +146,8 @@ def search_artists():
 
 @app.route('/artists/<int:artist_id>')
 def show_artist(artist_id):
-    try:
-        artist = Artist.query.join(Show).filter(Artist.id == artist_id).one()
-    except IndexError:
-        abort(404)
+    artist = Artist.query.get_or_404(artist_id)
+
     return render_template('pages/show_artist.html', artist=artist)
 
 
@@ -265,7 +251,6 @@ def shows():
         Show.venue_id, Venue.name.label('venue_name'), Show.artist_id, Artist.name.label('artist_name'),
         Artist.image_link.label('artist_image_link'), Show.start_time).all()
 
-
     return render_template('pages/shows.html', shows=data)
 
 
@@ -279,7 +264,7 @@ def create_shows():
 @app.route('/shows/create', methods=['POST'])
 def create_show_submission():
     form = ShowForm(formdata=request.form)
-    id = 0
+    obj_id = 0
     if not form.validate():
         flash(form.errors, category='error')
         return render_template('forms/new_show.html', form=form)
@@ -288,7 +273,7 @@ def create_show_submission():
         db.session.add(show)
         db.session.commit()
         flash(f'Show was successfully listed!')
-        id = show.id
+        obj_id = show.id
     except:
         db.session.rollback()
         print(sys.exc_info())

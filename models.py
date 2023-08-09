@@ -21,7 +21,7 @@ class Venue(db.Model):
     genres = db.Column(ARRAY(db.String(255), dimensions=1))
     # genres = db.Column(MutableList.as_mutable(ARRAY(db.String(255))), default=[])
     seeking_description = db.Column(db.String(500))
-    shows = db.relationship('Show', backref='venue')
+    shows = db.relationship('Show', backref='venue',lazy=False)
 
 
 class Artist(db.Model):
@@ -38,7 +38,7 @@ class Artist(db.Model):
     genres = db.Column(ARRAY(db.String(255), dimensions=1))
     seeking_description = db.Column(db.String(500))
     website_link = db.Column(db.String(500))
-    shows = db.relationship('Show', backref='artist')
+    shows = db.relationship('Show', backref='artist', lazy=False)
 
 
 class Show(db.Model):
