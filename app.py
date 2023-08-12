@@ -2,13 +2,22 @@ import logging
 import sys
 from logging import Formatter, FileHandler
 
-from flask import Flask, render_template, request, flash, redirect, url_for, abort
+from flask import (
+    Flask,
+    render_template,
+    request,
+    flash,
+    redirect,
+    url_for,
+    abort,
+)
 from flask_migrate import Migrate
 from flask_moment import Moment
 from sqlalchemy import func
 from utils import format_datetime
 from forms import *
 from models import db, Venue, Artist, Show
+from flask_wtf.csrf import CSRFProtect
 
 # ----------------------------------------------------------------------------#
 # App Config.
@@ -17,6 +26,7 @@ from models import db, Venue, Artist, Show
 app = Flask(__name__)
 moment = Moment(app)
 app.config.from_object('config')
+csrf = CSRFProtect(app)
 
 db.init_app(app)
 migrate = Migrate(app, db)
@@ -64,7 +74,13 @@ def venues():
 @app.route('/venues/search', methods=['POST'])
 def search_venues():
     search_term = request.form.get('search_term', '')
-    response = Venue.query.filter(Venue.name.ilike(f'%{search_term}%')).all()
+    data = Venue.query.filter(Venue.name.ilike(f'%{search_term}%')).with_entities(Venue.id, Venue.name).all()
+    # select fields in db scope better than in python scope
+    response = {
+        "count": len(data),
+        "data": data
+    }
+
     return render_template('pages/search_venues.html', results=response, search_term=search_term)
 
 
@@ -72,7 +88,30 @@ def search_venues():
 def show_venue(venue_id):
     venue = Venue.query.get_or_404(venue_id)
 
-    return render_template('pages/show_venue.html', venue=venue)
+    past_shows = []
+    upcoming_shows = []
+
+    for show in venue.shows:
+        temp_show = {
+            'artist_id': show.artist_id,
+            'artist_name': show.artist.name,
+            'artist_image_link': show.artist.image_link,
+            'start_time': show.start_time.strftime("%m/%d/%Y, %H:%M")
+        }
+        if show.start_time <= datetime.now():
+            past_shows.append(temp_show)
+        else:
+            upcoming_shows.append(temp_show)
+
+    # object class to dict
+    data = vars(venue)
+
+    data['past_shows'] = past_shows
+    data['upcoming_shows'] = upcoming_shows
+    data['past_shows_count'] = len(past_shows)
+    data['upcoming_shows_count'] = len(upcoming_shows)
+
+    return render_template('pages/show_venue.html', venue=data)
 
 
 #  Create Venue
@@ -88,11 +127,13 @@ def create_venue_form():
 def create_venue_submission():
     form = VenueForm(request.form)
     obj_id = 0
-    if not form.validate():
+    if not form.validate_on_submit():
         flash(form.errors, 'error')
         return render_template('forms/new_venue.html', form=form)
+    form_data = form.data.copy()
+    form_data.pop('csrf_token', None)
     try:
-        obj = Venue(**form.data)
+        obj = Venue(**form_data)
         db.session.add(obj)
         db.session.commit()
         flash(f'Venue {obj.name}  was successfully listed!')
@@ -139,7 +180,13 @@ def artists():
 @app.route('/artists/search', methods=['POST'])
 def search_artists():
     search_term = request.form.get('search_term', '')
-    response = Artist.query.filter(Artist.name.ilike(f'%{search_term}%')).all()
+    data = Artist.query.filter(Artist.name.ilike(f'%{search_term}%')).all()
+
+    response = {
+        "count": len(data),
+        "data": data
+    }
+
     return render_template('pages/search_artists.html', results=response,
                            search_term=search_term)
 
@@ -147,6 +194,29 @@ def search_artists():
 @app.route('/artists/<int:artist_id>')
 def show_artist(artist_id):
     artist = Artist.query.get_or_404(artist_id)
+
+    past_shows = []
+    upcoming_shows = []
+
+    for show in artist.shows:
+        temp_show = {
+            'venue_id': show.venue_id,
+            'venue_name': show.venue.name,
+            'venue_image_link': show.venue.image_link,
+            'start_time': show.start_time.strftime("%m/%d/%Y, %H:%M")
+        }
+        if show.start_time <= datetime.now():
+            past_shows.append(temp_show)
+        else:
+            upcoming_shows.append(temp_show)
+
+    # object class to dict
+    data = vars(artist)
+
+    data['past_shows'] = past_shows
+    data['upcoming_shows'] = upcoming_shows
+    data['past_shows_count'] = len(past_shows)
+    data['upcoming_shows_count'] = len(upcoming_shows)
 
     return render_template('pages/show_artist.html', artist=artist)
 
@@ -165,7 +235,7 @@ def edit_artist(artist_id):
 def edit_artist_submission(artist_id):
     artist = Artist.query.get_or_404(artist_id)
     form = ArtistForm(formdata=request.form, obj=artist)
-    if not form.validate():
+    if not form.validate_on_submit():
         flash(form.errors, category='error')
         return render_template('forms/edit_artist.html', form=form, artist=artist)
     try:
@@ -193,7 +263,7 @@ def edit_venue(venue_id):
 def edit_venue_submission(venue_id):
     venue = Venue.query.get_or_404(venue_id)
     form = VenueForm(formdata=request.form)
-    if not form.validate():
+    if not form.validate_on_submit():
         flash(form.errors, category='error')
         return render_template('forms/edit_venue.html', form=form, venue=venue)
     try:
@@ -223,11 +293,13 @@ def create_artist_submission():
     form = ArtistForm(formdata=request.form)
     obj_id = 0
     name = ''
-    if not form.validate():
+    if not form.validate_on_submit():
         flash(form.errors, category='error')
         return render_template('forms/new_artist.html', form=form)
+    form_data = form.data.copy()
+    form_data.pop('csrf_token', None)
     try:
-        artist = Artist(**form.data)
+        artist = Artist(**form_data)
         db.session.add(artist)
         db.session.commit()
         flash(f'Artist {name} was successfully listed!')
@@ -265,11 +337,13 @@ def create_shows():
 def create_show_submission():
     form = ShowForm(formdata=request.form)
     obj_id = 0
-    if not form.validate():
+    if not form.validate_on_submit():
         flash(form.errors, category='error')
         return render_template('forms/new_show.html', form=form)
+    form_data = form.data.copy()
+    form_data.pop('csrf_token', None)
     try:
-        show = Show(**form.data)
+        show = Show(**form_data)
         db.session.add(show)
         db.session.commit()
         flash(f'Show was successfully listed!')
